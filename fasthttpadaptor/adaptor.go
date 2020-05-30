@@ -1,4 +1,4 @@
-// Package fasthttpadaptor provides helper functions for converting net/http
+// package fasthttpadaptor provides helper functions for converting net/http
 // request handlers to fasthttp request handlers.
 package fasthttpadaptor
 
