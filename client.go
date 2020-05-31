@@ -208,6 +208,11 @@ type Client struct {
 	// Default TLS config is used if not set.
 	TLSConfig *tls.Config
 
+	// uTLS ClientHelloID for uTLS connection
+	//
+	// HelloRandomizedALPN is used if not set
+	ClientHelloID *tls.ClientHelloID
+
 	// Maximum number of connections per each host which may be established.
 	//
 	// DefaultMaxConnsPerHost is used if not set.
@@ -482,6 +487,7 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			DialDualStack:                 c.DialDualStack,
 			IsTLS:                         isTLS,
 			TLSConfig:                     c.TLSConfig,
+			ClientHelloID:                 c.ClientHelloID,
 			MaxConns:                      c.MaxConnsPerHost,
 			MaxIdleConnDuration:           c.MaxIdleConnDuration,
 			MaxConnDuration:               c.MaxConnDuration,
@@ -612,6 +618,9 @@ type HostClient struct {
 
 	// Optional TLS config.
 	TLSConfig *tls.Config
+
+	// Optional uTLS ClientHelloID
+	ClientHelloID *tls.ClientHelloID
 
 	// Maximum number of connections which may be established to all hosts
 	// listed in Addr.
@@ -1758,7 +1767,7 @@ func (c *HostClient) dialHostHard() (conn net.Conn, err error) {
 	for n > 0 {
 		addr := c.nextAddr()
 		tlsConfig := c.cachedTLSConfig(addr)
-		conn, err = dialAddr(addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.WriteTimeout)
+		conn, err = dialAddr(addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.WriteTimeout)
 		if err == nil {
 			return conn, nil
 		}
@@ -1794,7 +1803,7 @@ var ErrTLSHandshakeTimeout = errors.New("tls handshake timed out")
 
 var timeoutErrorChPool sync.Pool
 
-func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, timeout time.Duration) (net.Conn, error) {
+func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID tls.ClientHelloID, timeout time.Duration) (net.Conn, error) {
 	tc := AcquireTimer(timeout)
 	defer ReleaseTimer(tc)
 
@@ -1805,8 +1814,9 @@ func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, timeout time.Du
 	}
 	ch = chv.(chan error)
 	defer timeoutErrorChPool.Put(chv)
-
-	conn := tls.Client(rawConn, tlsConfig)
+	// conn := tls.Client(rawConn, tlsConfig)
+	// Use uTLS client here
+	conn := tls.UClient(rawConn, tlsConfig, clientHelloID)
 
 	go func() {
 		ch <- conn.Handshake()
@@ -1826,7 +1836,7 @@ func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, timeout time.Du
 	}
 }
 
-func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *tls.Config, timeout time.Duration) (net.Conn, error) {
+func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *tls.Config, clientHelloID *tls.ClientHelloID, timeout time.Duration) (net.Conn, error) {
 	if dial == nil {
 		if dialDualStack {
 			dial = DialDualStack
@@ -1834,6 +1844,10 @@ func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *
 			dial = Dial
 		}
 		addr = addMissingPort(addr, isTLS)
+	}
+	// use randomized HelloRandomizedALPN by default
+	if clientHelloID == nil {
+		clientHelloID = &tls.HelloRandomizedALPN
 	}
 	conn, err := dial(addr)
 	if err != nil {
@@ -1845,9 +1859,9 @@ func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *
 	_, isTLSAlready := conn.(*tls.Conn)
 	if isTLS && !isTLSAlready {
 		if timeout == 0 {
-			return tls.Client(conn, tlsConfig), nil
+			return tls.UClient(conn, tlsConfig, *clientHelloID), nil
 		}
-		return tlsClientHandshake(conn, tlsConfig, timeout)
+		return tlsClientHandshake(conn, tlsConfig, *clientHelloID, timeout)
 	}
 	return conn, nil
 }
@@ -2112,6 +2126,7 @@ type pipelineConnClient struct {
 	DialDualStack       bool
 	IsTLS               bool
 	TLSConfig           *tls.Config
+	ClientHelloID       *tls.ClientHelloID
 	MaxIdleConnDuration time.Duration
 	ReadBufferSize      int
 	WriteBufferSize     int
@@ -2385,7 +2400,7 @@ func (c *pipelineConnClient) init() {
 
 func (c *pipelineConnClient) worker() error {
 	tlsConfig := c.cachedTLSConfig()
-	conn, err := dialAddr(c.Addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.WriteTimeout)
+	conn, err := dialAddr(c.Addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.WriteTimeout)
 	if err != nil {
 		return err
 	}
