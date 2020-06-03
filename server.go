@@ -3,7 +3,6 @@ package fasthttp
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	tls "github.com/refraction-networking/utls"
 )
 
 var errNoCertOrKeyProvided = errors.New("cert or key has not provided")

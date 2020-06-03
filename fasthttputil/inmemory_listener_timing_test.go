@@ -1,9 +1,10 @@
 package fasthttputil_test
 
 import (
-	"crypto/tls"
 	"net"
 	"testing"
+
+	tls "github.com/refraction-networking/utls"
 
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
