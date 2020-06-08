@@ -190,7 +190,7 @@ type Client struct {
 	NoDefaultUserAgentHeader bool
 
 	// NoRawHeaders when set false enables requesting with raw headers
-	NoRawHeaders bool
+	EnableRawHeaders bool
 
 	// Callback for establishing new connections to hosts.
 	//
@@ -486,6 +486,7 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			Addr:                          addMissingPort(string(host), isTLS),
 			Name:                          c.Name,
 			NoDefaultUserAgentHeader:      c.NoDefaultUserAgentHeader,
+			EnableRawHeaders:              c.EnableRawHeaders,
 			Dial:                          c.Dial,
 			DialDualStack:                 c.DialDualStack,
 			IsTLS:                         isTLS,
@@ -601,8 +602,8 @@ type HostClient struct {
 	// User-Agent header to be excluded from the Request.
 	NoDefaultUserAgentHeader bool
 
-	// NoRawHeaders when set false enables requesting with raw headers
-	NoRawHeaders bool
+	// EnableRawHeaders when set false enables requesting with raw headers
+	EnableRawHeaders bool
 
 	// Callback for establishing new connection to the host.
 	//
@@ -1320,7 +1321,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	if len(userAgentOld) == 0 {
 		req.Header.userAgent = append(req.Header.userAgent[:0], c.getClientName()...)
 	}
-	if c.NoRawHeaders == false {
+	if c.EnableRawHeaders == true {
 		req.Header.EnableWriteRawHeaders()
 	}
 	bw := c.acquireWriter(conn)
