@@ -189,7 +189,7 @@ type Client struct {
 	// User-Agent header to be excluded from the Request.
 	NoDefaultUserAgentHeader bool
 
-	// NoRawHeaders when set false enables requesting with raw headers
+	// EnableRawHeaders when set true enables requesting with raw headers
 	EnableRawHeaders bool
 
 	// Callback for establishing new connections to hosts.
