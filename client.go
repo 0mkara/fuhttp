@@ -189,6 +189,9 @@ type Client struct {
 	// User-Agent header to be excluded from the Request.
 	NoDefaultUserAgentHeader bool
 
+	// NoRawHeaders when set false enables requesting with raw headers
+	NoRawHeaders bool
+
 	// Callback for establishing new connections to hosts.
 	//
 	// Default Dial is used if not set.
@@ -597,6 +600,9 @@ type HostClient struct {
 	// NoDefaultUserAgentHeader when set to true, causes the default
 	// User-Agent header to be excluded from the Request.
 	NoDefaultUserAgentHeader bool
+
+	// NoRawHeaders when set false enables requesting with raw headers
+	NoRawHeaders bool
 
 	// Callback for establishing new connection to the host.
 	//
@@ -1313,6 +1319,9 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	userAgentOld := req.Header.UserAgent()
 	if len(userAgentOld) == 0 {
 		req.Header.userAgent = append(req.Header.userAgent[:0], c.getClientName()...)
+	}
+	if c.NoRawHeaders == false {
+		req.Header.EnableWriteRawHeaders()
 	}
 	bw := c.acquireWriter(conn)
 	err = req.Write(bw)

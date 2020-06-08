@@ -74,6 +74,7 @@ type RequestHeader struct {
 	cookies []argsKV
 
 	rawHeaders []byte
+	writeRaw   bool
 
 	// stores an immutable copy of headers as they were received from the
 	// wire.
@@ -622,6 +623,11 @@ func (h *RequestHeader) DisableNormalizing() {
 	h.disableNormalizing = true
 }
 
+// EnableWriteRawHeaders enables writeing RawHeaders to request
+func (h *RequestHeader) EnableWriteRawHeaders() {
+	h.writeRaw = true
+}
+
 // DisableNormalizing disables header names' normalization.
 //
 // By default all the header names are normalized by uppercasing
@@ -664,6 +670,7 @@ func (h *ResponseHeader) resetSkipNormalize() {
 // Reset clears request header.
 func (h *RequestHeader) Reset() {
 	h.disableNormalizing = false
+	h.writeRaw = false
 	h.resetSkipNormalize()
 }
 
@@ -1549,6 +1556,12 @@ func (h *RequestHeader) Write(w *bufio.Writer) error {
 	return err
 }
 
+// WriteRaw writes raw header to w
+func (h *RequestHeader) WriteRaw(w *bufio.Writer) error {
+	_, err := w.Write(h.RawHeaders())
+	return err
+}
+
 // WriteTo writes request header to w.
 //
 // WriteTo implements io.WriterTo interface.
@@ -1672,7 +1685,8 @@ func (h *RequestHeader) parse(buf []byte) (int, error) {
 	}
 
 	var rawHeaders []byte
-	rawHeaders, _, err = readRawHeaders(h.rawHeaders[:0], buf[m:])
+	// Lets not exclude first line from header buf[m:] > buf[0:]
+	rawHeaders, _, err = readRawHeaders(h.rawHeaders[:0], buf[0:])
 	if err != nil {
 		return 0, err
 	}
