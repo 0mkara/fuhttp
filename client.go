@@ -216,6 +216,9 @@ type Client struct {
 	// HelloRandomizedALPN is used if not set
 	ClientHelloID *tls.ClientHelloID
 
+	// uTLS ClientHelloSpec
+	ClientHelloSpec tls.ClientHelloSpec
+
 	// Maximum number of connections per each host which may be established.
 	//
 	// DefaultMaxConnsPerHost is used if not set.
@@ -492,6 +495,7 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			IsTLS:                         isTLS,
 			TLSConfig:                     c.TLSConfig,
 			ClientHelloID:                 c.ClientHelloID,
+			ClientHelloSpec:               c.ClientHelloSpec,
 			MaxConns:                      c.MaxConnsPerHost,
 			MaxIdleConnDuration:           c.MaxIdleConnDuration,
 			MaxConnDuration:               c.MaxConnDuration,
@@ -543,6 +547,16 @@ func (c *Client) mCleaner(m map[string]*HostClient) {
 		}
 		time.Sleep(10 * time.Second)
 	}
+}
+
+// CloseIdleConnections closes any connections on its Transport which
+// were previously connected from previous requests but are now
+// sitting idle in a "keep-alive" state. It does not interrupt any
+// connections currently in use.
+//
+// If the Client's Transport does not have a CloseIdleConnections method
+// then this method does nothing.
+func (c *Client) CloseIdleConnections() {
 }
 
 // DefaultMaxConnsPerHost is the maximum number of concurrent connections
@@ -628,6 +642,9 @@ type HostClient struct {
 
 	// Optional uTLS ClientHelloID
 	ClientHelloID *tls.ClientHelloID
+
+	// Optional uTLS ClientHelloSpec
+	ClientHelloSpec tls.ClientHelloSpec
 
 	// Maximum number of connections which may be established to all hosts
 	// listed in Addr.
@@ -1777,7 +1794,7 @@ func (c *HostClient) dialHostHard() (conn net.Conn, err error) {
 	for n > 0 {
 		addr := c.nextAddr()
 		tlsConfig := c.cachedTLSConfig(addr)
-		conn, err = dialAddr(addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.WriteTimeout)
+		conn, err = dialAddr(addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.ClientHelloSpec, c.WriteTimeout)
 		if err == nil {
 			return conn, nil
 		}
@@ -1813,11 +1830,12 @@ var ErrTLSHandshakeTimeout = errors.New("tls handshake timed out")
 
 var timeoutErrorChPool sync.Pool
 
-func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID tls.ClientHelloID, timeout time.Duration) (net.Conn, error) {
+func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID *tls.ClientHelloID, clientHelloSpec tls.ClientHelloSpec, timeout time.Duration) (net.Conn, error) {
 	tc := AcquireTimer(timeout)
 	defer ReleaseTimer(tc)
 
 	var ch chan error
+	var conn *tls.UConn
 	chv := timeoutErrorChPool.Get()
 	if chv == nil {
 		chv = make(chan error)
@@ -1826,7 +1844,12 @@ func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID t
 	defer timeoutErrorChPool.Put(chv)
 	// conn := tls.Client(rawConn, tlsConfig)
 	// Use uTLS client here
-	conn := tls.UClient(rawConn, tlsConfig, clientHelloID)
+	if &clientHelloSpec != nil {
+		conn = tls.UClient(rawConn, tlsConfig, tls.HelloCustom)
+		conn.ApplyPreset(&clientHelloSpec)
+	} else {
+		conn = tls.UClient(rawConn, tlsConfig, *clientHelloID)
+	}
 
 	go func() {
 		ch <- conn.Handshake()
@@ -1846,7 +1869,7 @@ func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID t
 	}
 }
 
-func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *tls.Config, clientHelloID *tls.ClientHelloID, timeout time.Duration) (net.Conn, error) {
+func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *tls.Config, clientHelloID *tls.ClientHelloID, clientHelloSpec tls.ClientHelloSpec, timeout time.Duration) (net.Conn, error) {
 	if dial == nil {
 		if dialDualStack {
 			dial = DialDualStack
@@ -1869,9 +1892,12 @@ func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *
 	_, isTLSAlready := conn.(*tls.Conn)
 	if isTLS && !isTLSAlready {
 		if timeout == 0 {
+			if &clientHelloSpec != nil {
+				return tls.UClient(conn, tlsConfig, *&tls.HelloCustom), nil
+			}
 			return tls.UClient(conn, tlsConfig, *clientHelloID), nil
 		}
-		return tlsClientHandshake(conn, tlsConfig, *clientHelloID, timeout)
+		return tlsClientHandshake(conn, tlsConfig, clientHelloID, clientHelloSpec, timeout)
 	}
 	return conn, nil
 }
@@ -2137,6 +2163,7 @@ type pipelineConnClient struct {
 	IsTLS               bool
 	TLSConfig           *tls.Config
 	ClientHelloID       *tls.ClientHelloID
+	ClientHelloSpec     tls.ClientHelloSpec
 	MaxIdleConnDuration time.Duration
 	ReadBufferSize      int
 	WriteBufferSize     int
@@ -2410,7 +2437,7 @@ func (c *pipelineConnClient) init() {
 
 func (c *pipelineConnClient) worker() error {
 	tlsConfig := c.cachedTLSConfig()
-	conn, err := dialAddr(c.Addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.WriteTimeout)
+	conn, err := dialAddr(c.Addr, c.Dial, c.DialDualStack, c.IsTLS, tlsConfig, c.ClientHelloID, c.ClientHelloSpec, c.WriteTimeout)
 	if err != nil {
 		return err
 	}
