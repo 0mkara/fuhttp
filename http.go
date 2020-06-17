@@ -1226,8 +1226,15 @@ func (req *Request) Write(w *bufio.Writer) error {
 		hasBody = true
 		req.Header.SetContentLength(len(body))
 	}
-	if err = req.Header.Write(w); err != nil {
-		return err
+	// Write raw headers implementation
+	if req.Header.writeRaw == true {
+		if err = req.Header.WriteRaw(w); err != nil {
+			return err
+		}
+	} else {
+		if err = req.Header.Write(w); err != nil {
+			return err
+		}
 	}
 	if hasBody {
 		_, err = w.Write(body)
