@@ -1830,7 +1830,7 @@ var ErrTLSHandshakeTimeout = errors.New("tls handshake timed out")
 
 var timeoutErrorChPool sync.Pool
 
-func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID *tls.ClientHelloID, clientHelloSpec tls.ClientHelloSpec, timeout time.Duration) (net.Conn, error) {
+func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID tls.ClientHelloID, clientHelloSpec tls.ClientHelloSpec, timeout time.Duration) (net.Conn, error) {
 	tc := AcquireTimer(timeout)
 	defer ReleaseTimer(tc)
 
@@ -1845,10 +1845,10 @@ func tlsClientHandshake(rawConn net.Conn, tlsConfig *tls.Config, clientHelloID *
 	// conn := tls.Client(rawConn, tlsConfig)
 	// Use uTLS client here
 	if &clientHelloSpec != nil {
-		conn = tls.UClient(rawConn, tlsConfig, tls.HelloCustom)
+		conn = tls.UClient(rawConn, tlsConfig, clientHelloID)
 		conn.ApplyPreset(&clientHelloSpec)
 	} else {
-		conn = tls.UClient(rawConn, tlsConfig, *clientHelloID)
+		conn = tls.UClient(rawConn, tlsConfig, clientHelloID)
 	}
 
 	go func() {
@@ -1897,7 +1897,7 @@ func dialAddr(addr string, dial DialFunc, dialDualStack, isTLS bool, tlsConfig *
 			}
 			return tls.UClient(conn, tlsConfig, *clientHelloID), nil
 		}
-		return tlsClientHandshake(conn, tlsConfig, clientHelloID, clientHelloSpec, timeout)
+		return tlsClientHandshake(conn, tlsConfig, *clientHelloID, clientHelloSpec, timeout)
 	}
 	return conn, nil
 }
